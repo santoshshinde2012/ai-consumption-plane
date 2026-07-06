@@ -1,24 +1,58 @@
 # The AI Consumption Plane on Databricks
 
-End-to-end, runnable source code for the article **"The AI Consumption Plane on Databricks: A Hands-On Build"** — one Bronze → Silver refinement flow that terminates in four governed data products (analytical mart, feature set, vector index, metric view), exposed to AI agents through Databricks managed MCP servers, with measured retrieval quality.
+End-to-end, runnable source for an **AI consumption plane** on Databricks: one Bronze → Silver refinement flow that terminates in four governed data products (analytical mart, feature set, vector index, metric view), exposes them to AI agents through Databricks managed MCP servers, and closes the loop with measured retrieval quality. Every object — volumes, tables, feature tables, index, metric view, functions, MCP endpoints — lives under one Unity Catalog permission and lineage model.
 
-> Article series: *Rethinking Bronze, Silver, and Gold for the AI era* — Part 2 (hands-on build).
+## Architecture
 
-## What you'll build
+```mermaid
+flowchart LR
+  subgraph raw[Raw sources]
+    O[TPC-H orders]
+    D[PDFs / DOCX]
+  end
 
-```
- RAW           BRONZE                SILVER                          PRODUCTS (the boundary)
- orders ──► orders_bronze ──► orders_silver (expectations) ──┬─► daily_sales      → BI
-                                                             ├─► customer_features → ML → online store
-                                                             └─► sales_metrics     → SQL · Genie
- PDFs  ──► support_docs_bronze ─► support_docs_parsed
-              (binary, volume)     ├─► support_docs_enriched  (ai_classify + ai_extract → analytics)
-                                   └─► support_chunks ──────────► support_docs_index → RAG
- ──────────────── every object governed by Unity Catalog ────────────────────────────────
-                                          │
-                Managed MCP:  /ai-search · /genie · /functions   (on-behalf-of-user auth)
-                                          ▼
-                        MLflow 3 retrieval evaluation (Step 10)
+  subgraph bronze[Bronze — landing]
+    OB[orders_bronze]
+    SB[support_docs_bronze<br/>binary, volume]
+  end
+
+  subgraph silver[Silver — refinement]
+    OS[orders_silver<br/>expectations]
+    SP[support_docs_parsed<br/>ai_parse_document]
+    SE[support_docs_enriched<br/>ai_classify + ai_extract]
+    SC[support_chunks<br/>redacted · CDF on]
+  end
+
+  subgraph products[Products — the boundary]
+    DS[daily_sales<br/>mart]
+    CF[customer_features<br/>feature table]
+    SM[sales_metrics<br/>metric view]
+    IDX[support_docs_index<br/>AI Search]
+  end
+
+  subgraph consumers[Consumers]
+    BI[BI dashboards]
+    ML[ML models<br/>+ online store]
+    AG[AI agents]
+    EVAL[MLflow 3<br/>retrieval eval]
+  end
+
+  O --> OB --> OS
+  D --> SB --> SP
+  SP --> SE
+  SP --> SC
+  OS --> DS --> BI
+  OS --> CF --> ML
+  OS --> SM
+  SC --> IDX
+  SE -. feeds analytics .-> DS
+
+  DS & CF & SM & IDX --> MCP[["Managed MCP<br/>/ai-search · /genie · /functions<br/>on-behalf-of-user auth"]]
+  MCP --> AG
+  IDX --> EVAL
+
+  classDef boundary fill:#0b6,stroke:#083,color:#fff;
+  class DS,CF,SM,IDX boundary;
 ```
 
 ## Prerequisites
@@ -51,7 +85,7 @@ End-to-end, runnable source code for the article **"The AI Consumption Plane on 
 | 12 | `05_verify_and_cleanup/verify.py` | One-shot health check of every stage |
 | 13 | `05_verify_and_cleanup/teardown.py` | Deletes index/endpoint/online store and drops schemas (**stops all costs**) |
 
-The Silver docs pipeline (`01_pipeline/silver_docs.py`) implements the full article Step 4 — **parse → enrich → chunk**. It parses with `ai_parse_document(content, map('version','2.0'))`, and (with `config.ENABLE_ENRICHMENT = True`, the default) emits `silver.support_docs_enriched` via `ai_classify` + `ai_extract` — one structured row per document, "one document in, two data shapes out."
+The Silver docs pipeline (`01_pipeline/silver_docs.py`) runs **parse → enrich → chunk**: it parses with `ai_parse_document(content, map('version','2.0'))`, and (with `config.ENABLE_ENRICHMENT = True`, the default) emits `silver.support_docs_enriched` via `ai_classify` + `ai_extract` — one structured row per document (classification + extracted fields) that feeds analytics alongside the retrieval chunks.
 
 All names live in **`config.py`** — edit once, everything follows.
 
@@ -76,7 +110,7 @@ The same checks run in CI on every push (`.github/workflows/ci.yml`).
 - **Citations are first-class.** `source_uri` + `chunk_position` travel with every chunk, so RAG answers can cite *"the return policy, page 1"* — the smoke query and the MLflow retriever both surface them.
 - **Pure logic is unit-tested.** The chunking/redaction algorithm lives in `lib/chunking.py` (no Spark imports) and is covered by `tests/test_chunking.py`; `silver_docs.py` inlines the same logic to stay runnable inside Lakeflow. CI (`.github/workflows/ci.yml`) runs ruff, `compileall`, and the tests on every push.
 - **PII is redacted in Silver, before embedding.** Regex email/phone redaction in the chunker; swap in `ai_query` or a PII library for production.
-- **Parse failures never reach retrieval.** Both chunk paths filter rows where `parsed:error_status` is set, per the "Operate It" checklist.
+- **Parse failures never reach retrieval.** Both chunk paths filter rows where `parsed:error_status` is set.
 - **Idempotent by construction.** `IF NOT EXISTS` / `CREATE OR REPLACE` and content-addressable `chunk_id`s everywhere; re-running any step is safe.
 - **Managed embeddings** (`databricks-qwen3-embedding-0-6b`, the current recommended model; `databricks-gte-large-en` still works) — required by the managed MCP AI Search server.
 - **SDK-agnostic.** `lib/ai_search.py` prefers the current `AISearchClient` and falls back to the legacy `VectorSearchClient`, so the build runs on either.
@@ -85,9 +119,26 @@ The same checks run in CI on every push (`.github/workflows/ci.yml`).
 
 The vector search **endpoint** and any **online feature store** bill while they exist — run `05_verify_and_cleanup/teardown.py` when done. `ai_parse_document` calls are billed under the `AI_FUNCTIONS` product; the 4 sample PDFs cost pennies.
 
-## Repo ↔ article map
+## Repository layout
 
-`00–01` = article Act I (Steps 1–4, incl. parse **and** enrich, plus the event-log quality query) · `02` = Act II (Steps 5–8, feature set offline **and** online) · `03` = Act III Step 9 (three agent tools + grants + MCP client) · `04` = Step 10 (measured quality) · `05` = "Operate It" checklist · `lib` + `tests` + `.github` = the CI/regression gate the checklist calls for.
+- `00_setup` — Unity Catalog namespace + synthetic sample documents
+- `01_pipeline` — Lakeflow pipeline (Bronze + Silver) and the data-quality event-log query
+- `02_products` — the four data products: mart, feature set (offline + online store), vector index, metric view
+- `03_agents` — agent tools: UC function, grants, Genie space, managed-MCP smoke test + client
+- `04_evaluation` — retrieval quality: hit-rate tuning + MLflow groundedness over a ground-truth set
+- `05_verify_and_cleanup` — one-shot health check and cost teardown
+- `lib` / `tests` / `.github` — pure, unit-tested logic and the CI gate (ruff · compile · pytest · bundle validate)
+
+## Production hardening
+
+This repo is a complete, runnable reference implementation. Before running it as a production system, close these gaps:
+
+- **Pin and verify dependencies.** Some packages/models track the newest Databricks surface (`databricks-ai-search`, `databricks-mcp`, `databricks-qwen3-embedding-0-6b`, `databricks-claude-sonnet-4-6`). Confirm availability in your workspace/region and pin exact versions. `lib/ai_search.py` already falls back to the legacy SDK.
+- **Beta functions.** `ai_prep_search` (DBR 18.2+) and the v2 `ai_extract` field names are Beta — validate their output schema before enabling `USE_AI_PREP_SEARCH`. The deterministic manual chunker is the safe default.
+- **Real PII handling.** Regex redaction is baseline; use a dedicated engine (Presidio, `ai_query`) and test the deletion path end-to-end before the first legal request.
+- **Replace synthetic ingestion.** `00_setup/02_generate_sample_docs.py` stands in for real document arrival; point Auto Loader at your actual source.
+- **Operations.** Add scheduling/orchestration, monitoring + alerting on the pipeline event log and index freshness, wire `DATABRICKS_HOST`/`DATABRICKS_TOKEN` secrets so CI `bundle-validate` runs, and enable the `TIMESERIES` primary-key designation on the feature table for point-in-time-correct training joins.
+- **Review grants.** `03_agents/04_grants.sql` is the entire agent security model — scope it to real groups; that grant is exactly what your agents can do.
 
 ## License
 

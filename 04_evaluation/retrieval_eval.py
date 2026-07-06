@@ -5,7 +5,7 @@
 # COMMAND ----------
 """Evaluation · retrieval quality as a contract.
 
-Two loops, per the article's Step 10:
+Two loops:
   A) TUNING  — hit-rate@k for HYBRID vs pure-ANN against a ground-truth set
      (one knob at a time; let the metrics decide). Logged to MLflow runs.
   B) JUDGING — MLflow 3 RetrievalGroundedness over a traced retriever span,

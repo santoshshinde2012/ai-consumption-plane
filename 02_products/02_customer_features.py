@@ -30,8 +30,8 @@ customer_features = (
         F.count("o_orderkey").alias("total_orders"),
         F.avg("o_totalprice").cast("decimal(18,2)").alias("avg_order_value"),
         F.countDistinct(F.date_format("o_orderdate", "yyyy-MM")).alias("months_active"),
-        # Same >500 "High" threshold as the original article's segmentation —
-        # one governed column instead of a whole extra "Platinum" layer.
+        # Engagement signal as one governed column (>500 = high-value order),
+        # instead of a separate customer-tier table.
         F.avg(F.when(F.col("o_totalprice") > 500, 1.0).otherwise(0.0)).alias("high_value_ratio"),
     )
 )

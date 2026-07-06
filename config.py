@@ -33,7 +33,7 @@ LOOKUP_FUNCTION = f"{PRODUCTS_SCHEMA}.lookup_customer_features"
 # `databricks-vectorsearch` / `VectorSearchClient` still runs. lib/ai_search.py
 # picks whichever is installed. Docs teach AISearchClient.
 VS_ENDPOINT = "eshop-search"
-VS_ENDPOINT_TYPE = "STANDARD"                  # see article Step 1 for the SKU decision
+VS_ENDPOINT_TYPE = "STANDARD"                  # STANDARD (interactive) vs STORAGE_OPTIMIZED (massive corpus)
 VS_INDEX = f"{PRODUCTS_SCHEMA}.support_docs_index"
 # Current recommended managed-embedding model (older databricks-gte-large-en
 # still works); required for the managed MCP AI Search server.

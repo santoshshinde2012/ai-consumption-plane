@@ -3,9 +3,9 @@
 # MAGIC %restart_python
 
 # COMMAND ----------
-"""Step 2 · Generate synthetic E-Shop support documents into the Bronze volume.
+"""Generate synthetic E-Shop support documents into the Bronze volume.
 
-Four PDFs are created so the unstructured half of the build is testable
+Four PDFs are created so the unstructured half of the pipeline is testable
 end to end. The complaint letter deliberately contains a fake email and
 phone number so you can verify PII redaction in the Silver chunker.
 Every evaluation question in 04_evaluation/eval_dataset.jsonl is answered

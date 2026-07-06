@@ -100,7 +100,7 @@ def window_text(
 
     Short text (``<= size``) yields a single chunk when it clears
     ``min_chars``, otherwise nothing (drop noise). Chunk size stays a *quality
-    knob* — Step 9's evaluation is what tells you the right value.
+    knob* — the retrieval evaluation is what tells you the right value.
     """
     text = text.strip()
     if not text:

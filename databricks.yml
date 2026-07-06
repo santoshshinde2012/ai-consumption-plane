@@ -1,6 +1,6 @@
 # OPTIONAL: Databricks Asset Bundle for the Lakeflow pipeline.
 #   databricks bundle validate && databricks bundle deploy -t dev
-# If your CLI/bundle schema differs, create the pipeline via UI instead (see README step 3).
+# If your CLI/bundle schema differs, create the pipeline via UI instead (see README).
 bundle:
   name: ai-consumption-plane
 

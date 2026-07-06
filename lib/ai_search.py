@@ -3,7 +3,7 @@
 Databricks renamed Vector Search to **AI Search**, including the SDK:
 the current package is ``databricks-ai-search`` (``AISearchClient``), and the
 legacy ``databricks-vectorsearch`` (``VectorSearchClient``) still runs. Both
-expose the same surface this build uses — ``create_endpoint``,
+expose the same surface this project uses — ``create_endpoint``,
 ``create_delta_sync_index``, ``get_index``, ``delete_index``,
 ``delete_endpoint`` — and index objects share ``similarity_search`` /
 ``describe``.

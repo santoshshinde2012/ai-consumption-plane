@@ -1,5 +1,5 @@
 -- ============================================================================
--- Step 1 · Namespace — one governed home for everything this build creates.
+-- Namespace — one governed home for everything this project creates.
 -- Idempotent: safe to re-run.
 -- ============================================================================
 CREATE CATALOG IF NOT EXISTS eshop;

@@ -5,7 +5,7 @@
 # COMMAND ----------
 """Product 2 (online) · publish customer_features to a Lakebase online store.
 
-The documented production upgrade from Step 6: the same governed offline
+The production upgrade for real-time serving: the same governed offline
 feature table, now served with millisecond latency for real-time inference —
 the same client, three calls. The online copy stays in sync with the offline
 table in the mode you choose:

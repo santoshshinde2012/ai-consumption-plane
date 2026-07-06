@@ -1,5 +1,5 @@
 -- ============================================================================
--- Step 3 (observability) · "What passed validation last night?" is one query.
+-- Data-quality observability · "What passed validation last night?" is one query.
 --
 -- Pipeline expectations emit pass/fail counts to the event log on every run.
 -- The event_log table function is owner-only; publish a view for the team.
