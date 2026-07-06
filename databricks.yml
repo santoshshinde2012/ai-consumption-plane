@@ -1,0 +1,27 @@
+# OPTIONAL: Databricks Asset Bundle for the Lakeflow pipeline.
+#   databricks bundle validate && databricks bundle deploy -t dev
+# If your CLI/bundle schema differs, create the pipeline via UI instead (see README step 3).
+bundle:
+  name: ai-consumption-plane
+
+targets:
+  dev:
+    default: true
+    mode: development
+
+resources:
+  pipelines:
+    acp_pipeline:
+      name: ai-consumption-plane
+      # Serverless picks a current runtime automatically. If you flip
+      # config.USE_AI_PREP_SEARCH = True, ensure DBR 18.2+ (Beta ai_prep_search).
+      serverless: true
+      catalog: eshop
+      schema: silver
+      libraries:
+        - file:
+            path: ./01_pipeline/bronze.py
+        - file:
+            path: ./01_pipeline/silver_orders.py
+        - file:
+            path: ./01_pipeline/silver_docs.py

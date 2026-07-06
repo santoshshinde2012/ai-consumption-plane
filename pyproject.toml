@@ -1,0 +1,23 @@
+# Tooling config for local dev + CI (Databricks runtime ignores this file).
+[project]
+name = "ai-consumption-plane"
+version = "1.0.0"
+description = "One Bronze->Silver flow terminating in four governed data products, exposed to agents via managed MCP."
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# Pipeline files reference Spark's injected `spark`/`display` globals and use
+# Databricks notebook magics in comments — keep lint focused on real issues.
+extend-exclude = []
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = [
+  "E501",  # long doc URLs and SQL strings
+  "F821",  # `spark` / `display` are injected by the Databricks/Lakeflow runtime
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

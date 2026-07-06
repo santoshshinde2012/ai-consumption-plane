@@ -1,0 +1,9 @@
+# Runtime libs, mirroring the %pip installs in the notebooks (for local IDE support).
+# On Databricks these are installed per-notebook via %pip magics.
+databricks-sdk>=0.30
+databricks-ai-search>=0.1          # current AI Search SDK (AISearchClient)
+databricks-vectorsearch>=0.40      # legacy client — lib/ai_search.py falls back to it
+databricks-feature-engineering>=0.13.0   # >=0.13.0 for the Lakebase online-store APIs
+databricks-mcp>=0.1                # consumer-side managed-MCP client (03_agents/05_...)
+mlflow>=3.1
+reportlab>=4.0

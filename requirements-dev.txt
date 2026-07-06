@@ -1,0 +1,5 @@
+# Dev + CI only. Intentionally does NOT pull in requirements.txt: the unit tests
+# cover lib/ (pure Python, no Spark/Databricks), and CI syntax-checks the rest —
+# so CI stays fast and never needs the heavy Databricks runtime packages.
+pytest>=8.0
+ruff>=0.6

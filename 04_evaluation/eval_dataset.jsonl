@@ -1,0 +1,6 @@
+{"query": "What is the return window for electronics?", "expected_source": "return_policy.pdf"}
+{"query": "Do you ship internationally?", "expected_source": "shipping_faq.pdf"}
+{"query": "How long is the warranty on electronics?", "expected_source": "warranty_terms.pdf"}
+{"query": "How much is standard domestic shipping?", "expected_source": "shipping_faq.pdf"}
+{"query": "How are refunds issued after a return?", "expected_source": "return_policy.pdf"}
+{"query": "What does the warranty not cover?", "expected_source": "warranty_terms.pdf"}

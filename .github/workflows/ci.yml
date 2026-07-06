@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Syntax-compile every source file
+        # Catches syntax errors in pipeline/notebook files without a Spark runtime.
+        run: python -m compileall -q 01_pipeline 02_products 03_agents 04_evaluation 05_verify_and_cleanup lib config.py 00_setup
+
+      - name: Unit tests (pure chunking logic — the retrieval quality contract)
+        run: pytest -q
+
+  bundle-validate:
+    # Validates the Lakeflow Asset Bundle. Runs only when workspace secrets are
+    # configured, so forks/PRs without credentials still pass the quality job.
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      - name: Validate bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          if [ -z "$DATABRICKS_HOST" ]; then
+            echo "DATABRICKS_HOST secret not set — skipping bundle validation."
+            exit 0
+          fi
+          databricks bundle validate -t dev
