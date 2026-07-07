@@ -71,6 +71,7 @@ flowchart LR
 | 2 | `00_setup/02_generate_sample_docs.py` | Writes 4 synthetic PDFs (policies, FAQ, warranty, complaint with planted PII) into the volume |
 | 3 | `01_pipeline/{bronze,silver_orders,silver_docs}.py` | Create a **Lakeflow Spark Declarative Pipeline** whose source is this folder (UI: *Pipelines → Create → add the three `.py` files*; serverless recommended; default catalog `eshop`, target schema `silver`). Run it. Optional: `databricks bundle deploy` using `databricks.yml`. |
 | 3b | `01_pipeline/event_log_quality.sql` | *After a pipeline run* — query expectation pass/fail counts from the event log; publishes a governed quality view |
+| 3c | `01_pipeline/monitoring_alerts.sql` | *Ops* — queries to wire as Databricks SQL Alerts (expectation failures, parse errors, index staleness, canary) |
 | 4 | `02_products/01_daily_sales_mart.sql` | Materialized-view mart |
 | 5 | `02_products/02_customer_features.py` | Unity Catalog feature table (idempotent create + merge) |
 | 5b | `02_products/02b_online_feature_store.py` | *Optional* — publish features to a Lakebase online store (offline **and** online) |
@@ -78,11 +79,12 @@ flowchart LR
 | 7 | `02_products/04_sales_metric_view.sql` | Metric view with agent metadata (synonyms) + `MEASURE()` check |
 | 8 | `03_agents/01_lookup_function.sql` | UC function agent tool (returns a JSON feature row) |
 | 8b | `03_agents/04_grants.sql` | Grant the agent group its tools — the entire agent security model |
-| 9 | `03_agents/02_genie_space.md` | UI steps to create the Genie Space; paste `space_id` into `config.py` |
+| 9 | `03_agents/02_genie_space.md` *(or `06_create_genie_space.py`)* | Create the Genie Space — UI steps, or as-code best-effort; paste `space_id` into `config.py` |
 | 10 | `03_agents/03_mcp_smoke_test.py` | Verifies assets and prints your three managed-MCP URLs |
 | 10b | `03_agents/05_mcp_client_example.py` | The whole consumer side — connect an agent to a managed MCP server (~10 lines) |
-| 11 | `04_evaluation/retrieval_eval.py` | Hit-rate HYBRID vs ANN + MLflow `RetrievalGroundedness` over real LLM answers |
+| 11 | `04_evaluation/retrieval_eval.py` | Hit-rate HYBRID vs ANN + MLflow `RetrievalGroundedness` over real LLM answers; fails below quality thresholds |
 | 12 | `05_verify_and_cleanup/verify.py` | One-shot health check of every stage |
+| 12b | `05_verify_and_cleanup/delete_document.py` | *Ops* — right-to-be-forgotten: purge a doc's chunks, sync the index, assert it's gone |
 | 13 | `05_verify_and_cleanup/teardown.py` | Deletes index/endpoint/online store and drops schemas (**stops all costs**) |
 
 The Silver docs pipeline (`01_pipeline/silver_docs.py`) runs **parse → enrich → chunk**: it parses with `ai_parse_document(content, map('version','2.0'))`, and (with `config.ENABLE_ENRICHMENT = True`, the default) emits `silver.support_docs_enriched` via `ai_classify` + `ai_extract` — one structured row per document (classification + extracted fields) that feeds analytics alongside the retrieval chunks.
@@ -127,7 +129,7 @@ make validate    # optional: validate the Asset Bundle (dev)
 
 ## Cost notes
 
-The vector search **endpoint** and any **online feature store** bill while they exist — run `05_verify_and_cleanup/teardown.py` when done. `ai_parse_document` calls are billed under the `AI_FUNCTIONS` product; the 4 sample PDFs cost pennies.
+The vector search **endpoint** and any **online feature store** bill while they exist — run `05_verify_and_cleanup/teardown.py` when done. The AI functions (`ai_parse_document`, and `ai_classify`/`ai_extract` when `ENABLE_ENRICHMENT`, and `ai_mask` when `PII_ENGINE="ai_mask"`) bill under the `AI_FUNCTIONS` product; the 4 sample PDFs cost pennies.
 
 ## Repository layout
 
@@ -137,20 +139,31 @@ The vector search **endpoint** and any **online feature store** bill while they 
 - `03_agents` — agent tools: UC function, grants, Genie space (UI + as-code), managed-MCP smoke test + client
 - `04_evaluation` — retrieval quality: hit-rate tuning + MLflow groundedness with regression thresholds
 - `05_verify_and_cleanup` — health check, right-to-be-forgotten deletion path, cost teardown
-- `lib` — pure, unit-tested helpers: chunking, AI Search client factory, retry/backoff, secrets
-- `tests` / `.github` — unit tests and CI (`ci.yml` gate + nightly `eval.yml` regression), CODEOWNERS, PR template
-- `config.py` · `databricks.yml` · `.pre-commit-config.yaml` · `CHANGELOG.md` — config, multi-env bundle, hooks, history
+- `lib` — pure, unit-tested helpers: chunking, PII redaction, AI Search client factory, retry/backoff, secrets
+- `tests` / `.github` — unit tests (chunking, config, pii, retry) and CI (`ci.yml` gate + nightly `eval.yml` regression), CODEOWNERS, PR template
+- `config.py` · `databricks.yml` · `Makefile` · `.pre-commit-config.yaml` · `pyproject.toml` — config, multi-env bundle, dev/ops targets, hooks, tooling
+- `SECURITY.md` · `CHANGELOG.md` · `LICENSE` — security model, history, license
 
 ## Production hardening
 
-This repo is a complete, runnable reference implementation. Before running it as a production system, close these gaps:
+Much of the hardening is already built in:
 
-- **Pin and verify dependencies.** Some packages/models track the newest Databricks surface (`databricks-ai-search`, `databricks-mcp`, `databricks-qwen3-embedding-0-6b`, `databricks-claude-sonnet-4-6`). Confirm availability in your workspace/region and pin exact versions. `lib/ai_search.py` already falls back to the legacy SDK.
-- **Beta functions.** `ai_prep_search` (DBR 18.2+) and the v2 `ai_extract` field names are Beta — validate their output schema before enabling `USE_AI_PREP_SEARCH`. The deterministic manual chunker is the safe default.
-- **Real PII handling.** Regex redaction is baseline; use a dedicated engine (Presidio, `ai_query`) and test the deletion path end-to-end before the first legal request.
-- **Replace synthetic ingestion.** `00_setup/02_generate_sample_docs.py` stands in for real document arrival; point Auto Loader at your actual source.
-- **Operations.** Add scheduling/orchestration, monitoring + alerting on the pipeline event log and index freshness, wire `DATABRICKS_HOST`/`DATABRICKS_TOKEN` secrets so CI `bundle-validate` runs, and enable the `TIMESERIES` primary-key designation on the feature table for point-in-time-correct training joins.
-- **Review grants.** `03_agents/04_grants.sql` is the entire agent security model — scope it to real groups; that grant is exactly what your agents can do.
+- **Fail-fast config** — `config.validate()` runs at the top of every entrypoint (bad enum / empty name / nonsensical chunk size fails immediately).
+- **Robust idempotency & resilience** — explicit existence checks (`list_*`, `tableExists`, `get_online_store`) instead of error-string matching; index-readiness waits use typed status + capped backoff (`lib/retry.py`).
+- **PII redaction on both chunk paths** — `config.PII_ENGINE` = `regex` (baseline) or native `ai_mask` (production); nothing raw reaches an embedding. See `lib/pii.py` and [`SECURITY.md`](SECURITY.md).
+- **Tested right-to-be-forgotten** — `05_verify_and_cleanup/delete_document.py` purges chunks, syncs the index, and asserts the doc is gone.
+- **Multi-environment deploy** — `databricks.yml` `dev`/`staging`/`prod` targets, a scheduled refresh job, and failure notifications.
+- **CI gates** — `ci.yml` (lint · compile · tests · `bundle validate`) plus nightly `eval.yml` that fails on retrieval regression.
+- **Monitoring** — `01_pipeline/monitoring_alerts.sql` to wire as SQL Alerts; **pre-commit** (ruff + gitleaks) blocks secrets before they land.
+
+What still needs **your environment** (config/credentials, not code):
+
+- **Add repo secrets** — `DATABRICKS_HOST` + OIDC federation (or `DATABRICKS_TOKEN`); until then both CI jobs self-skip.
+- **Verify & lock dependencies** — some packages/models track the newest Databricks surface (`databricks-ai-search`, `databricks-mcp`, `databricks-qwen3-embedding-0-6b`, `databricks-claude-sonnet-4-6`). Confirm availability in your workspace/region, then `make lock`.
+- **Turn on production PII** — set `PII_ENGINE = "ai_mask"` and eyeball masked output on real documents (default `regex` avoids token cost).
+- **Beta functions** — validate `ai_prep_search` (DBR 18.2+) / v2 `ai_extract` output before flipping `USE_AI_PREP_SEARCH`. The deterministic manual chunker is the safe default.
+- **Set real values** — `notification_email`, `run_as` service principal, prod catalog names, secret scope; scope `03_agents/04_grants.sql` to real groups; enable the `TIMESERIES` primary-key designation for point-in-time-correct training joins.
+- **Replace synthetic ingestion** — `00_setup/02_generate_sample_docs.py` stands in for real arrival; point Auto Loader at your source.
 
 ## License
 

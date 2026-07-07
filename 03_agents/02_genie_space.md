@@ -4,6 +4,10 @@ Genie Spaces are created in the UI (no public DDL). This gives agents
 natural-language access to the structured products, with the metric view's
 synonyms doing the semantic heavy lifting.
 
+> Prefer as-code? Try `03_agents/06_create_genie_space.py` — it attempts the
+> SDK/REST call and falls back to these manual steps if the API isn't available
+> in your workspace/SDK version.
+
 1. In the workspace sidebar, open **Genie** → **New space** (name: `E-Shop Sales`).
 2. Add data: `eshop.products.sales_metrics` and `eshop.products.daily_sales`
    (a space supports up to 25 Unity Catalog tables/views).
