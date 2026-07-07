@@ -49,7 +49,7 @@ MIN_CHUNK_CHARS = 50
 # 1) Parse — one expression, binary document → structured VARIANT.
 # ---------------------------------------------------------------------------
 @dp.table(
-    comment="CONTRACT: structured parse of every Bronze document; elements + confidence + layout."
+    comment="CONTRACT: structured parse of every Bronze document; elements + confidence + bounding boxes."
 )
 def support_docs_parsed():
     return spark.readStream.table("support_docs_bronze").selectExpr(
