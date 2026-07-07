@@ -7,6 +7,8 @@
 import config
 from lib.ai_search import get_search_client
 
+config.validate()
+
 checks: list[tuple[str, str]] = []
 
 

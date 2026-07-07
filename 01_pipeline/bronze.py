@@ -31,9 +31,13 @@ def orders_bronze():
 )
 def support_docs_bronze():
     # Streaming source (Auto Loader on the volume) → streaming table.
+    # binaryFile has a fixed schema (path, modificationTime, length, content);
+    # schemaLocation gives Auto Loader a stable checkpoint. The "_schema" dir is
+    # underscore-prefixed, so Auto Loader skips it during discovery.
     return (
         spark.readStream.format("cloudFiles")
         .option("cloudFiles.format", "binaryFile")  # bytes in, for ai_parse_document
+        .option("cloudFiles.schemaLocation", f"{DOCS_VOLUME_PATH}/_schema")
         .load(DOCS_VOLUME_PATH)
         .select(
             "path",

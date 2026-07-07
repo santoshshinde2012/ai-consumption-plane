@@ -1,0 +1,9 @@
+# Default owners for everything in this repo.
+* @santoshshinde2012
+
+# Pipeline and data products — data engineering owns the contracts.
+/01_pipeline/ @santoshshinde2012
+/02_products/ @santoshshinde2012
+
+# Agent tools and grants — review carefully; grants define what agents can do.
+/03_agents/ @santoshshinde2012

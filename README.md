@@ -95,13 +95,24 @@ No workspace needed for the fast feedback loop:
 
 ```bash
 pip install -r requirements-dev.txt
+pre-commit install    # optional: run the gates on every commit
 ruff check .          # lint
-pytest -q             # unit tests for the chunking/redaction logic (lib/chunking.py)
+pytest -q             # unit tests: chunking/redaction (lib/chunking.py), config.validate(), retry
 python -m compileall 01_pipeline 02_products   # syntax-check pipeline/notebook files
 databricks bundle validate -t dev              # optional: validate the Lakeflow bundle
 ```
 
 The same checks run in CI on every push (`.github/workflows/ci.yml`).
+
+## Deployment & operations
+
+- **Multi-environment bundle.** `databricks.yml` defines `dev` / `staging` / `prod` targets (distinct catalogs), a scheduled refresh **job** (`refresh_cron`, default 06:00 UTC), and pipeline/job **failure notifications** (`notification_email`). Deploy with `databricks bundle deploy -t prod`. Set `run_as` to a service principal in shared environments.
+- **CI gates.** `ci.yml` (lint · compile · tests · `bundle validate`) runs on every push; `eval.yml` runs the retrieval evaluation **nightly and fails on regression** below `EVAL_MIN_HIT_RATE` / `EVAL_MIN_GROUNDEDNESS`. Both self-skip until you add `DATABRICKS_HOST` / `DATABRICKS_TOKEN` repo secrets (OIDC preferred).
+- **Config safety.** `config.validate()` runs at the top of every entrypoint — a bad enum, empty name, or nonsensical chunk size fails immediately, not 30 minutes into an index build.
+- **Idempotency & resilience.** Existence is checked explicitly (`list_*`, `tableExists`, `get_online_store`) rather than by matching error strings; long waits use capped exponential backoff (`lib/retry.py`).
+- **Monitoring.** Wire the queries in `01_pipeline/monitoring_alerts.sql` as Databricks SQL Alerts (expectation failures, parse errors, index staleness, empty-retrieval canary).
+- **Deletion / RTBF.** `05_verify_and_cleanup/delete_document.py` purges a document's chunks in Silver, syncs the index, and asserts it's no longer retrievable — test it before the first legal request.
+- **Secrets.** Runtime credentials come from a Databricks secret scope via `lib/secrets.py` (env-var fallback for CI), never from `config.py`.
 
 ## Design decisions (read before running)
 
@@ -122,12 +133,14 @@ The vector search **endpoint** and any **online feature store** bill while they 
 ## Repository layout
 
 - `00_setup` — Unity Catalog namespace + synthetic sample documents
-- `01_pipeline` — Lakeflow pipeline (Bronze + Silver) and the data-quality event-log query
+- `01_pipeline` — Lakeflow pipeline (Bronze + Silver), the data-quality event-log query, and monitoring/alert SQL
 - `02_products` — the four data products: mart, feature set (offline + online store), vector index, metric view
-- `03_agents` — agent tools: UC function, grants, Genie space, managed-MCP smoke test + client
-- `04_evaluation` — retrieval quality: hit-rate tuning + MLflow groundedness over a ground-truth set
-- `05_verify_and_cleanup` — one-shot health check and cost teardown
-- `lib` / `tests` / `.github` — pure, unit-tested logic and the CI gate (ruff · compile · pytest · bundle validate)
+- `03_agents` — agent tools: UC function, grants, Genie space (UI + as-code), managed-MCP smoke test + client
+- `04_evaluation` — retrieval quality: hit-rate tuning + MLflow groundedness with regression thresholds
+- `05_verify_and_cleanup` — health check, right-to-be-forgotten deletion path, cost teardown
+- `lib` — pure, unit-tested helpers: chunking, AI Search client factory, retry/backoff, secrets
+- `tests` / `.github` — unit tests and CI (`ci.yml` gate + nightly `eval.yml` regression), CODEOWNERS, PR template
+- `config.py` · `databricks.yml` · `.pre-commit-config.yaml` · `CHANGELOG.md` — config, multi-env bundle, hooks, history
 
 ## Production hardening
 

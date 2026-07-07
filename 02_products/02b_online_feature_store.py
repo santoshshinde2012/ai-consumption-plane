@@ -33,21 +33,20 @@ if not config.ENABLE_ONLINE_STORE:
         f"Set it True to serve {config.FEATURES_TABLE} online. The store bills while it exists."
     )
 else:
+    config.validate()
     fe = FeatureEngineeringClient()
 
-    # 1) Provision (or reuse) the Lakebase online store.
+    # 1) Provision (or reuse) the Lakebase online store — explicit existence check.
     try:
+        online_store = fe.get_online_store(name=config.ONLINE_STORE_NAME)
+        print(f"online store {config.ONLINE_STORE_NAME} already exists — reusing")
+    except Exception:
         fe.create_online_store(
             name=config.ONLINE_STORE_NAME,          # provisions a Lakebase project
             capacity=config.ONLINE_STORE_CAPACITY,  # CU_1 / CU_2 / CU_4 / CU_8
         )
+        online_store = fe.get_online_store(name=config.ONLINE_STORE_NAME)
         print(f"created online store {config.ONLINE_STORE_NAME}")
-    except Exception as e:
-        if "already exists" not in str(e).lower():
-            raise
-        print(f"online store {config.ONLINE_STORE_NAME} already exists — reusing")
-
-    online_store = fe.get_online_store(name=config.ONLINE_STORE_NAME)
 
     # 2) Publish the offline feature table into it.
     fe.publish_table(

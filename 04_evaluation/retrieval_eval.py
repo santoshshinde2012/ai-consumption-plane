@@ -23,6 +23,7 @@ from mlflow.genai.scorers import RetrievalGroundedness
 import config
 from lib.ai_search import get_search_client
 
+config.validate()
 index = get_search_client().get_index(
     endpoint_name=config.VS_ENDPOINT, index_name=config.VS_INDEX
 )
@@ -48,6 +49,7 @@ def search(query: str, query_type: str, k: int = config.EVAL_TOP_K):
 
 # --- A) Tuning: hit-rate@k, HYBRID vs ANN --------------------------------------
 mlflow.set_experiment("/Shared/ai-consumption-plane-retrieval")
+hit_rates: dict[str, float] = {}
 for query_type in ["HYBRID", "ANN"]:
     with mlflow.start_run(run_name=f"hit_rate_{query_type}"):
         hits_at_k = 0
@@ -56,6 +58,7 @@ for query_type in ["HYBRID", "ANN"]:
             if any(ex["expected_source"] in str(r["source_uri"]) for r in rows):
                 hits_at_k += 1
         rate = hits_at_k / len(EVAL)
+        hit_rates[query_type] = rate
         mlflow.log_param("query_type", query_type)
         mlflow.log_param("k", config.EVAL_TOP_K)
         mlflow.log_metric("hit_rate_at_k", rate)
@@ -92,9 +95,35 @@ def rag_answer(query: str) -> str:
     return resp.choices[0].message.content
 
 
-mlflow.genai.evaluate(
+results = mlflow.genai.evaluate(
     data=[{"inputs": {"query": ex["query"]}} for ex in EVAL],
     predict_fn=rag_answer,  # inputs keys map to predict_fn kwargs
     scorers=[RetrievalGroundedness()],
 )
 print("Groundedness evaluation complete — open the MLflow experiment UI for per-question scores.")
+
+
+def _groundedness_mean(res) -> float | None:
+    """Pull the mean groundedness out of the eval result, tolerant of key naming."""
+    metrics = getattr(res, "metrics", None) or {}
+    for k, v in metrics.items():
+        if "groundedness" in k.lower() and ("mean" in k.lower() or "/" not in k):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+# --- Regression gate: fail the (CI) run when quality drops below contract -------
+if config.EVAL_ENFORCE_THRESHOLDS:
+    failures = []
+    hybrid = hit_rates.get("HYBRID", 0.0)
+    if hybrid < config.EVAL_MIN_HIT_RATE:
+        failures.append(f"HYBRID hit-rate {hybrid:.2f} < {config.EVAL_MIN_HIT_RATE:.2f}")
+    grounded = _groundedness_mean(results)
+    if grounded is not None and grounded < config.EVAL_MIN_GROUNDEDNESS:
+        failures.append(f"groundedness {grounded:.2f} < {config.EVAL_MIN_GROUNDEDNESS:.2f}")
+    if failures:
+        raise SystemExit("RETRIEVAL REGRESSION:\n  - " + "\n  - ".join(failures))
+    print("Retrieval quality gate passed.")

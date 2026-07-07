@@ -1,0 +1,42 @@
+name: Retrieval eval (nightly regression gate)
+
+on:
+  schedule:
+    - cron: "0 7 * * *"      # 07:00 UTC daily, after the pipeline refresh
+  workflow_dispatch:
+
+jobs:
+  retrieval-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Guard on workspace credentials
+        id: guard
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+        run: |
+          if [ -z "$DATABRICKS_HOST" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "DATABRICKS_HOST not set — skipping (configure repo secrets to enable)."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install runtime deps
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install databricks-ai-search databricks-sdk "mlflow>=3.1"
+
+      - name: Run retrieval evaluation (fails on regression)
+        if: steps.guard.outputs.run == 'true'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          PYTHONPATH: .          # so `import config` / `from lib...` resolve from repo root
+        run: python 04_evaluation/retrieval_eval.py

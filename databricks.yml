@@ -1,23 +1,32 @@
-# OPTIONAL: Databricks Asset Bundle for the Lakeflow pipeline.
-#   databricks bundle validate && databricks bundle deploy -t dev
+# Databricks Asset Bundle for the Lakeflow pipeline + scheduled refresh.
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev        # or -t staging / -t prod
 # If your CLI/bundle schema differs, create the pipeline via UI instead (see README).
 bundle:
   name: ai-consumption-plane
 
-targets:
-  dev:
-    default: true
-    mode: development
+variables:
+  catalog:
+    description: Unity Catalog for this environment.
+    default: eshop
+  pipeline_schema:
+    description: Target schema for pipeline outputs.
+    default: silver
+  notification_email:
+    description: Recipient for pipeline/job failure alerts.
+    default: alerts@example.com
+  refresh_cron:
+    description: Quartz cron for the scheduled refresh (default 06:00 UTC daily).
+    default: "0 0 6 * * ?"
 
 resources:
   pipelines:
     acp_pipeline:
-      name: ai-consumption-plane
-      # Serverless picks a current runtime automatically. If you flip
-      # config.USE_AI_PREP_SEARCH = True, ensure DBR 18.2+ (Beta ai_prep_search).
+      name: ai-consumption-plane-${bundle.target}
       serverless: true
-      catalog: eshop
-      schema: silver
+      catalog: ${var.catalog}
+      schema: ${var.pipeline_schema}
+      continuous: false          # refreshed by the job below; set true for streaming
       libraries:
         - file:
             path: ./01_pipeline/bronze.py
@@ -25,3 +34,46 @@ resources:
             path: ./01_pipeline/silver_orders.py
         - file:
             path: ./01_pipeline/silver_docs.py
+      notifications:
+        - email_recipients:
+            - ${var.notification_email}
+          alerts:
+            - on-update-failure
+            - on-update-fatal-failure
+            - on-flow-failure
+
+  jobs:
+    acp_refresh:
+      name: acp-refresh-${bundle.target}
+      schedule:
+        quartz_cron_expression: ${var.refresh_cron}
+        timezone_id: UTC
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+      tasks:
+        - task_key: refresh_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.acp_pipeline.id}
+
+targets:
+  dev:
+    default: true
+    mode: development       # resources are prefixed & paused; safe to iterate
+    variables:
+      catalog: eshop_dev
+
+  staging:
+    mode: production
+    variables:
+      catalog: eshop_staging
+    # run_as a service principal in shared environments:
+    # run_as:
+    #   service_principal_name: ${var.service_principal}
+
+  prod:
+    mode: production
+    variables:
+      catalog: eshop
+    # run_as:
+    #   service_principal_name: ${var.service_principal}

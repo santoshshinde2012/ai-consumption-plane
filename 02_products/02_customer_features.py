@@ -21,6 +21,7 @@ from pyspark.sql import functions as F
 
 import config
 
+config.validate()
 fe = FeatureEngineeringClient()
 
 customer_features = (
@@ -36,7 +37,12 @@ customer_features = (
     )
 )
 
-try:
+# Idempotent via an explicit existence check (not error-message matching):
+# create the feature table the first time, merge fresh values on every re-run.
+if spark.catalog.tableExists(config.FEATURES_TABLE):
+    fe.write_table(name=config.FEATURES_TABLE, df=customer_features, mode="merge")
+    print(f"{config.FEATURES_TABLE} exists — merged fresh feature values")
+else:
     fe.create_table(
         name=config.FEATURES_TABLE,
         primary_keys=["customer_key"],
@@ -44,11 +50,5 @@ try:
         description="PRODUCT | Owner: ml-platform | Purpose: churn + CLV models",
     )
     print(f"created {config.FEATURES_TABLE}")
-except Exception as e:  # idempotent re-run: table already exists -> merge fresh values
-    if "already exists" in str(e).lower():
-        fe.write_table(name=config.FEATURES_TABLE, df=customer_features, mode="merge")
-        print(f"{config.FEATURES_TABLE} exists — merged fresh feature values")
-    else:
-        raise
 
 display(spark.table(config.FEATURES_TABLE).limit(5))
