@@ -38,6 +38,9 @@ from pyspark.sql import types as T
 # --- Config (keep in sync with config.py — pipeline files run standalone) -----
 USE_AI_PREP_SEARCH = False
 ENABLE_ENRICHMENT = True
+PII_ENGINE = "regex"                 # "regex" (baseline) | "ai_mask" (native, production)
+PII_LABELS = ["email", "phone number", "person name", "street address",
+              "credit card number", "national id"]
 CHUNK_SIZE_CHARS = 1000
 CHUNK_OVERLAP_CHARS = 150
 MIN_CHUNK_CHARS = 50
@@ -203,6 +206,35 @@ def chunk_id_udf(path: str, page: int, seq: int):
     return hashlib.sha1(f"{path}::{page}::{seq}".encode()).hexdigest()
 
 
+@F.udf(returnType=T.StringType())
+def redact_udf(text: str):
+    return _redact(text or "")
+
+
+def _ai_mask(column: str) -> str:
+    quoted = ", ".join("'" + label.replace("'", "") + "'" for label in PII_LABELS)
+    return f"ai_mask({column}, array({quoted}))"
+
+
+def _apply_pii(df, already_regex: bool):
+    """Redact chunk_content + chunk_to_embed BEFORE they can be embedded.
+
+    ai_mask (native, production) always runs when selected. Otherwise the regex
+    engine runs here unless the text was already regex-redacted upstream (manual
+    path) — this is what closes the gap for the ai_prep_search path, which
+    produces raw text with no redaction of its own.
+    """
+    cols = ("chunk_content", "chunk_to_embed")
+    if PII_ENGINE == "ai_mask":
+        for c in cols:
+            df = df.withColumn(c, F.expr(_ai_mask(c)))
+        return df
+    if not already_regex:
+        for c in cols:
+            df = df.withColumn(c, redact_udf(F.col(c)))
+    return df
+
+
 # ---------------------------------------------------------------------------
 # 3) Chunk — CDF ON (required by the standard-endpoint Delta Sync vector index).
 # ---------------------------------------------------------------------------
@@ -215,7 +247,7 @@ def support_chunks():
         # Beta path (DBR 18.2+). variant_explode over document.contents[]; parse
         # failures filtered so they never reach retrieval. Confirm field names
         # against the ai_prep_search docs before relying on this in production.
-        return spark.sql(
+        prepped = spark.sql(
             """
             WITH prepped AS (
               SELECT path, ai_prep_search(parsed) AS result
@@ -233,6 +265,8 @@ def support_chunks():
                  LATERAL variant_explode(p.result:document.contents) AS chunk
             """
         )
+        # ai_prep_search emits raw text — redact before it reaches the index.
+        return _apply_pii(prepped, already_regex=False)
 
     # Manual fallback — deterministic, any runtime. Produces the SAME columns.
     parsed = spark.readStream.table("support_docs_parsed")
@@ -250,7 +284,7 @@ def support_chunks():
         "title",
         F.posexplode(window_chunks_udf(F.col("page_text"))).alias("chunk_position", "chunk_content"),
     )
-    return chunked.select(
+    manual = chunked.select(
         chunk_id_udf(F.col("path"), F.col("page"), F.col("chunk_position")).alias("chunk_id"),
         F.col("chunk_content"),
         # Context-enriched embedding text: fold the page title in, like ai_prep_search.
@@ -264,3 +298,6 @@ def support_chunks():
         ),
         F.col("path"),
     )
+    # Manual text is already regex-redacted in _extract_pages; upgrade to ai_mask
+    # here when that engine is selected.
+    return _apply_pii(manual, already_regex=True)

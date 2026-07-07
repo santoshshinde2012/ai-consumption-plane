@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# id-token lets the bundle-validate job authenticate to Databricks via OIDC
+# federation instead of a long-lived PAT (configure the federation policy in
+# your workspace, then drop DATABRICKS_TOKEN). contents:read is the default.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -45,6 +52,8 @@ jobs:
       - name: Validate bundle
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          # OIDC-preferred: omit the token and set DATABRICKS_AUTH_TYPE if you've
+          # configured workspace federation. Falls back to a PAT when present.
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
           if [ -z "$DATABRICKS_HOST" ]; then

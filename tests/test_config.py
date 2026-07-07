@@ -64,3 +64,9 @@ def test_thresholds_in_unit_range(fresh_config):
     fresh_config.EVAL_MIN_HIT_RATE = 1.5
     with pytest.raises(ValueError, match="EVAL_MIN_HIT_RATE"):
         fresh_config.validate()
+
+
+def test_rejects_bad_pii_engine(fresh_config):
+    fresh_config.PII_ENGINE = "shred"
+    with pytest.raises(ValueError, match="PII_ENGINE"):
+        fresh_config.validate()

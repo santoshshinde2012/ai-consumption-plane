@@ -60,6 +60,12 @@ MIN_CHUNK_CHARS = 50
 # sample docs); retrieval does not depend on it. Mirrored in silver_docs.py.
 ENABLE_ENRICHMENT = True
 
+# --- PII redaction (applied to chunks BEFORE embedding) ----------------------
+# "regex"  = baseline email/phone masking, zero cost, runs anywhere (default).
+# "ai_mask" = native ai_mask() over PII_LABELS (person/address/etc.); production
+#             grade, costs AI_FUNCTIONS tokens. Mirrored in silver_docs.py.
+PII_ENGINE = "regex"
+
 # --- Online feature store (optional Step-6 upgrade) --------------------------
 # Lakebase-backed online store for millisecond serving. BILLS WHILE IT EXISTS.
 # Requires databricks-feature-engineering >= 0.13.0 and a Lakebase-enabled workspace.
@@ -93,6 +99,7 @@ INDEX_READY_TIMEOUT_S = 30 * 60
 _ENDPOINT_TYPES = {"STANDARD", "STORAGE_OPTIMIZED"}
 _CAPACITIES = {"CU_1", "CU_2", "CU_4", "CU_8"}
 _PUBLISH_MODES = {"TRIGGERED", "CONTINUOUS", "SNAPSHOT"}
+_PII_ENGINES = {"regex", "ai_mask"}
 
 
 def validate() -> None:
@@ -114,6 +121,8 @@ def validate() -> None:
         problems.append(f"ONLINE_STORE_CAPACITY must be one of {_CAPACITIES}")
     if ONLINE_PUBLISH_MODE not in _PUBLISH_MODES:
         problems.append(f"ONLINE_PUBLISH_MODE must be one of {_PUBLISH_MODES}")
+    if PII_ENGINE not in _PII_ENGINES:
+        problems.append(f"PII_ENGINE must be one of {_PII_ENGINES}")
     if not 0 < CHUNK_OVERLAP_CHARS < CHUNK_SIZE_CHARS:
         problems.append("require 0 < CHUNK_OVERLAP_CHARS < CHUNK_SIZE_CHARS")
     if MIN_CHUNK_CHARS <= 0:

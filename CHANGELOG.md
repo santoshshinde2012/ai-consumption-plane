@@ -6,6 +6,17 @@ date-based releases.
 
 ## [Unreleased]
 
+### Added — security & DX
+- Production PII redaction: `lib/pii.py` with `regex` and native `ai_mask`
+  engines (`config.PII_ENGINE`), applied to **both** chunk paths — closes the
+  gap where `ai_prep_search` output reached the index unredacted.
+- `SECURITY.md` (authorization model, PII, RTBF, secrets, hardening checklist).
+- `Makefile` (install/hooks/check/lock/validate/deploy targets) and a
+  `requirements.lock` generation flow via `uv pip compile`.
+- OIDC federation (`id-token: write`) in CI/eval workflows as the preferred
+  auth over a long-lived PAT.
+- Tests for the PII engine and `PII_ENGINE` validation.
+
 ### Added — production hardening
 - `config.validate()` fail-fast validation, `require_genie_space()`, eval regression
   thresholds, secret-scope config, and a chunk-column contract (`CHUNK_COLUMNS`).

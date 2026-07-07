@@ -94,15 +94,14 @@ All names live in **`config.py`** — edit once, everything follows.
 No workspace needed for the fast feedback loop:
 
 ```bash
-pip install -r requirements-dev.txt
-pre-commit install    # optional: run the gates on every commit
-ruff check .          # lint
-pytest -q             # unit tests: chunking/redaction (lib/chunking.py), config.validate(), retry
-python -m compileall 01_pipeline 02_products   # syntax-check pipeline/notebook files
-databricks bundle validate -t dev              # optional: validate the Lakeflow bundle
+make install     # dev dependencies
+make hooks       # optional: pre-commit gates on every commit
+make check       # lint + compile + tests (everything CI runs)
+make lock        # optional: pin exact runtime versions -> requirements.lock (needs uv)
+make validate    # optional: validate the Asset Bundle (dev)
 ```
 
-The same checks run in CI on every push (`.github/workflows/ci.yml`).
+`make help` lists all targets. The same checks run in CI on every push (`.github/workflows/ci.yml`); `make deploy-{dev,staging,prod}` deploys the bundle.
 
 ## Deployment & operations
 
@@ -120,7 +119,7 @@ The same checks run in CI on every push (`.github/workflows/ci.yml`).
 - **The index embeds `chunk_to_embed`, not raw text.** That's the context-enriched column (title + chunk); `chunk_content` is kept separately for display/citations.
 - **Citations are first-class.** `source_uri` + `chunk_position` travel with every chunk, so RAG answers can cite *"the return policy, page 1"* — the smoke query and the MLflow retriever both surface them.
 - **Pure logic is unit-tested.** The chunking/redaction algorithm lives in `lib/chunking.py` (no Spark imports) and is covered by `tests/test_chunking.py`; `silver_docs.py` inlines the same logic to stay runnable inside Lakeflow. CI (`.github/workflows/ci.yml`) runs ruff, `compileall`, and the tests on every push.
-- **PII is redacted in Silver, before embedding.** Regex email/phone redaction in the chunker; swap in `ai_query` or a PII library for production.
+- **PII is redacted in Silver, before embedding — on both chunk paths.** `config.PII_ENGINE` selects `regex` (baseline email/phone) or native `ai_mask` (production; masks person/address/etc.). The manual *and* `ai_prep_search` paths both pass through redaction, so raw personal data never enters an embedding. See `lib/pii.py` and [`SECURITY.md`](SECURITY.md).
 - **Parse failures never reach retrieval.** Both chunk paths filter rows where `parsed:error_status` is set.
 - **Idempotent by construction.** `IF NOT EXISTS` / `CREATE OR REPLACE` and content-addressable `chunk_id`s everywhere; re-running any step is safe.
 - **Managed embeddings** (`databricks-qwen3-embedding-0-6b`, the current recommended model; `databricks-gte-large-en` still works) — required by the managed MCP AI Search server.
